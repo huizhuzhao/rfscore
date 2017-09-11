@@ -76,104 +76,95 @@ def sum_descriptor_bins(descriptor, bins):
     return descriptor
 
 def element_descriptor(protein, ligand, binsize=0.0):
-	"""
-	Calculates a descriptor based on the combination of elements of the interacting
-	atoms. This descriptor was used in the original RF-Score paper.
+    """
+    Calculates a descriptor based on the combination of elements of the interacting
+    atoms. This descriptor was used in the original RF-Score paper.
+    Parameters
+    ----------
+    protein: str
+        Path to the PDB structure of the protein.
+    ligand: str
+        Path to the structure of the ligand, must be readable by Open Babel.
+    binsize: float
+        Size of the distance bins in Angstrom that will be used to bin the contacts.
+        The total range will be from 1.0 to <cutoff> + <binsize> in <binsize> steps.
+    Returns
+    -------
+    descriptor: numpy.ndarray
+        Array containing the sum of the founc interactions per element pair (and
+        distance bin if specified).
+    label: list
+    List of labels that can be used as column headers.
+    """
+    # SUPPRESS OPENBABEL WARNINGS
+    pybel.ob.obErrorLog.StopLogging()
+    # ELEMENT TABLE TO DETERMINE VDW AND COVALENT BONDS
+    et = OBElementTable()
+    # CONVERT ELEMENT SYMBOLS TO ATOMIC NUMBERS
 
-	Parameters
-	----------
-	protein: str
-		Path to the PDB structure of the protein.
-	ligand: str
-		Path to the structure of the ligand, must be readable by Open Babel.
-	binsize: float
-		Size of the distance bins in Angstrom that will be used to bin the contacts.
-		The total range will be from 1.0 to <cutoff> + <binsize> in <binsize> steps.
+    atomicnums = (et.GetAtomicNum(str(element)) for element in config['elements'])
+    # CREATE A NUMERICAL ID TO ELEMENT COMBINATION MAPPING
+    # IMPORTANT TO MAP THE DESCRIPTOR VECTOR BACK TO THE LABELS
+    element_pairs = product(sorted(atomicnums),repeat=2)
+    element_pairs = dict((p,i) for i,p in enumerate(element_pairs))
 
-	Returns
-	-------
-	descriptor: numpy.ndarray
-		Array containing the sum of the founc interactions per element pair (and
-		distance bin if specified).
-	label: list
-		List of labels that can be used as column headers.
-	"""
-	# SUPPRESS OPENBABEL WARNINGS
-	pybel.ob.obErrorLog.StopLogging()
+    # ALSO CREATE A COLUMN LABEL FOR THIS DESCRIPTOR
+    sorted_pairs = zip(*sorted(element_pairs.items(), key=itemgetter(1)))[0]
+    numcols = len(element_pairs)
+    # GENERATE THE DISTANCE BINS
+    if binsize:
+        # get the distance bins for the given cutoff and bin size
+        bins = get_distance_bins(config['cutoff'], binsize)
+        # NUMBER OF TOTAL COLUMNS IN DESCRIPTOR
+        numcols *= (bins.size + 1)
+        # CREATE A COLUMN FOR EACH ELEMENT PAIR AND DISTANCE BIN
+        labels = []
+        for x,y in sorted_pairs:
+            for i in range(len(bins) + 1):
+                label = "{0}.{1}-B{2}".format(et.GetSymbol(x), et.GetSymbol(y), i)
+                labels.append(label)
+    # LABEL WITHOUT BINS
+    else:
+        labels = ['.'.join((et.GetSymbol(x),et.GetSymbol(y))) for x,y in sorted_pairs]
 
-	# ELEMENT TABLE TO DETERMINE VDW AND COVALENT BONDS
-	et = OBElementTable()
+    # DESCRIPTOR THAT WILL CONTAIN THE SUM OF ALL ELEMENT-ELEMENT INTERACTIONS
+    descriptor = numpy.zeros(numcols, dtype=np.int32)
 
-	# CONVERT ELEMENT SYMBOLS TO ATOMIC NUMBERS
-	atomicnums = (et.GetAtomicNum(str(element)) for element in config['elements'])
+    # GET THE CONTACTS
+    contacts = get_contacts(protein, ligand, config['cutoff'])
 
-	# CREATE A NUMERICAL ID TO ELEMENT COMBINATION MAPPING
-	# IMPORTANT TO MAP THE DESCRIPTOR VECTOR BACK TO THE LABELS
-	element_pairs = product(sorted(atomicnums),repeat=2)
-	element_pairs = dict((p,i) for i,p in enumerate(element_pairs))
+    # ITERATE THROUGH CONTACT PAIRS AND DETERMINE SIFT
+    for hetatm, hetatm_contacts in contacts:
+        res = hetatm.GetResidue()
+        hetatm_num = hetatm.GetAtomicNum()
 
-	# ALSO CREATE A COLUMN LABEL FOR THIS DESCRIPTOR
-	sorted_pairs = zip(*sorted(element_pairs.items(), key=itemgetter(1)))[0]
+        # ITERATE THROUGH ALL THE CONTACTS THE HETATM HAS
+        for atom, distance in hetatm_contacts:
+            residue = atom.GetResidue()
 
-	numcols = len(element_pairs)
+            if residue.GetAtomID(atom).strip() in ['FE','FE2']:
+                atom_num == 26
+            else:
+                atom_num = atom.GetAtomicNum()
 
-	# GENERATE THE DISTANCE BINS
-	if binsize:
-            # get the distance bins for the given cutoff and bin size
-            bins = get_distance_bins(config['cutoff'], binsize)
-            # NUMBER OF TOTAL COLUMNS IN DESCRIPTOR
-            numcols *= (bins.size + 1)
-            # CREATE A COLUMN FOR EACH ELEMENT PAIR AND DISTANCE BIN
-	    labels = []
-            for x,y in sorted_pairs:
-                for i in range(len(bins) + 1):
-                    label = "{0}.{1}-B{2}".format(et.GetSymbol(x), et.GetSymbol(y), i)
-                    labels.append(label)
-	# LABEL WITHOUT BINS
-	else:
-            labels = ['.'.join((et.GetSymbol(x),et.GetSymbol(y))) for x,y in sorted_pairs]
-            # DESCRIPTOR THAT WILL CONTAIN THE SUM OF ALL ELEMENT-ELEMENT INTERACTIONS
+            # IGNORE WATER RESIDUES
+            if residue.GetName() == 'HOH': continue
+            # IGNORE ZN,FE ETC.
+            try: index = element_pairs[(atom_num, hetatm_num)]
+            except KeyError: continue
 
-        descriptor = numpy.zeros(numcols, dtype=np.int32)
-
-	# GET THE CONTACTS
-        contacts = get_contacts(protein, ligand, config['cutoff'])
-
-	# ITERATE THROUGH CONTACT PAIRS AND DETERMINE SIFT
-        for hetatm, hetatm_contacts in contacts:
-            res = hetatm.GetResidue()
-            hetatm_num = hetatm.GetAtomicNum()
-
-            # ITERATE THROUGH ALL THE CONTACTS THE HETATM HAS
-            for atom, distance in hetatm_contacts:
-                residue = atom.GetResidue()
-
-		if residue.GetAtomID(atom).strip() in ['FE','FE2']:
-                    atom_num == 26
-                else:
-                    atom_num = atom.GetAtomicNum()
-
-                # IGNORE WATER RESIDUES
-                if residue.GetName() == 'HOH': continue
-
-                    # IGNORE ZN,FE ETC.
-                try: index = element_pairs[(atom_num, hetatm_num)]
-                except KeyError: continue
-
-                # BIN INTERACTIONS
-                if binsize:
+            # BIN INTERACTIONS
+            if binsize:
                 # GET THE BIN THIS CONTACT BELONGS IN
                 # DIGITIZE TAKES AN ARRAY-LIKE AS INPUT
-                    bin_id = numpy.digitize([distance,], bins)[0]
-                    descriptor[1 + index + index*bins.size + bin_id] += 1
-                else:
+                bin_id = numpy.digitize([distance,], bins)[0]
+                descriptor[1 + index + index*bins.size + bin_id] += 1
+            else:
+                # ELEMENTS ARE SORTED NUMERICALLY
+                descriptor[index] += 1
 
-                    # ELEMENTS ARE SORTED NUMERICALLY
-                    descriptor[index] += 1
-
-	if binsize: sum_descriptor_bins(descriptor, bins)
-
-	return descriptor, labels
+    if binsize: sum_descriptor_bins(descriptor, bins)
+    return descriptor, labels
 
 
 def sybyl_atom_type_descriptor(protein, ligand, binsize=0.0):
