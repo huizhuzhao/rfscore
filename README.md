@@ -11,3 +11,5 @@ forked from https://bitbucket.org/aschreyer/rfscore
 * Anna Vangone and Alexandre M.J.J. Bonvin: Contacts-based prediction of binding affinity in **protein-protein** complexes. eLife, e07454 (2015) [link](https://www.ncbi.nlm.nih.gov/pubmed/26193119)
 
    https://github.com/haddocking/binding_affinity
+   
+   A structure-based benchmark for protein–protein binding affinity [link] (http://onlinelibrary.wiley.com/doi/10.1002/pro.580/pdf) (144 protein-protein complexes data)
